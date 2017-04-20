@@ -5,6 +5,9 @@ WINDOW_LENGTH = 20
 NAVDATA_OFFSET_MILIS = 20
 
 if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print("Usage: %s NAVDATA_PATH COMMANDS_PATH" % sys.argv[0])
+        sys.exit(1)
     navdata = pandas.read_csv(sys.argv[1], sep='\t', header=None).rename(columns={0: "timestamp"})
     commands = pandas.read_csv(sys.argv[2], sep='\t', header=None).rename(columns={0: "timestamp"})
 
