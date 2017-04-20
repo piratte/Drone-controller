@@ -1,5 +1,8 @@
 import sys
+from pprint import pprint
+
 import pandas
+import numpy as np
 
 WINDOW_LENGTH = 20
 NAVDATA_OFFSET_MILIS = 20
@@ -18,8 +21,8 @@ if __name__ == '__main__':
 
     # we'll now create a average over a WINDOW_LENGTH ms time window, and we'll create a table of commands that covers
     # all the time. We assume that the commands have a sticky behavior (the command changes only when another arrives)
-    new_navdata = pandas.DataFrame(columns=navdata.columns)
-    new_commands = pandas.DataFrame(columns=commands.columns)
+    joined_data = []
+    new_navdata = []
     # just a debug counter
     counter = 0
     prev_command = pandas.DataFrame({'timestamp': begining_timestamp, 1: .0, 2: .0, 3: .0, 4: .0, }, index=[begining_timestamp])
@@ -28,12 +31,12 @@ if __name__ == '__main__':
         if data_from_current_window.shape[0] < 1: continue
         counter += 1
         # count the average over the timewindow for each column and add it to the new data
-        new_row = {}
-        for column in navdata:
-            new_row[column] = data_from_current_window[column].mean(axis=0)
         new_row_timestamp = cur_timestamp + NAVDATA_OFFSET_MILIS
-        new_row['timestamp'] = new_row_timestamp
-        new_navdata.loc[new_row_timestamp] = pandas.Series(new_row)
+        new_row = [new_row_timestamp]
+        for column in navdata:
+            new_row.append(data_from_current_window[column].mean(axis=0))
+        new_navdata.append(tuple(new_row))
+        # if counter > 10: sys.exit()
 
         # get the command fiting to that timewindow
         cur_commands = commands.loc[(cur_timestamp < commands['timestamp']) & (commands['timestamp'] < cur_timestamp + WINDOW_LENGTH), :]
@@ -45,19 +48,16 @@ if __name__ == '__main__':
         else:
             cur_command = cur_commands.head(1)
             prev_command = cur_commands.tail(1)
+        # get the only row and remove timestamp
+        new_row.extend(cur_command.values.tolist()[0][1:])
+        joined_data.append(tuple(new_row))
 
-        cur_command['timestamp'] = cur_timestamp
-        new_commands.loc[cur_timestamp] = pandas.Series(cur_command.iloc[0, :])
-
-    # do a database join to the navdata and commands on the timestamp column
-    joined_data = pandas.merge(new_navdata, new_commands, on='timestamp', how='inner')
-
+    new_navdata = np.array(new_navdata)
+    joined_data = np.array(joined_data)
     # debug prints
-    print(counter)
-    print(new_commands.tail(1))
-    print(new_navdata.tail(1))
-    print(joined_data.tail(1))
-    print(joined_data.shape)
+    print(new_navdata[-1])
+    print(joined_data[-1])
+    print(counter, new_navdata.shape, joined_data.shape)
 
     # training the actual flight model (state + command -> next state)
 
