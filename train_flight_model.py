@@ -1,63 +1,36 @@
 import sys
 from pprint import pprint
 
-import pandas
 import numpy as np
+from sklearn.linear_model import MultiTaskElasticNet, LinearRegression, MultiTaskLasso
+from scipy.spatial.distance import sqeuclidean
 
-WINDOW_LENGTH = 20
-NAVDATA_OFFSET_MILIS = 20
+JOINING_OFFSET = 1
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3 or '-h' in sys.argv or '--help' in sys.argv:
-        print("Usage: %s NAVDATA_PATH COMMANDS_PATH" % sys.argv[0])
-        sys.exit(1)
-    navdata = pandas.read_csv(sys.argv[1], sep='\t', header=None).rename(columns={0: "timestamp"})
-    commands = pandas.read_csv(sys.argv[2], sep='\t', header=None).rename(columns={0: "timestamp"})
-
-    # the data of our interest start with the beginning of the command data and end with the last sensor reading
-    begining_timestamp = commands.iloc[0, 0] - (commands.iloc[0, 0] % WINDOW_LENGTH) + WINDOW_LENGTH
-    nav_len = navdata.shape[0]-1
-    end_timestamp = navdata.iloc[nav_len, 0] - (navdata.iloc[nav_len, 0] % WINDOW_LENGTH)
-
-    # we'll now create a average over a WINDOW_LENGTH ms time window, and we'll create a table of commands that covers
-    # all the time. We assume that the commands have a sticky behavior (the command changes only when another arrives)
-    joined_data = []
-    new_navdata = []
-    # just a debug counter
-    counter = 0
-    prev_command = pandas.DataFrame({'timestamp': begining_timestamp, 1: .0, 2: .0, 3: .0, 4: .0, }, index=[begining_timestamp])
-    for cur_timestamp in range(int(begining_timestamp), int(end_timestamp), WINDOW_LENGTH):
-        data_from_current_window = navdata.loc[(cur_timestamp < navdata['timestamp']) & (navdata['timestamp'] < cur_timestamp + WINDOW_LENGTH), :]
-        if data_from_current_window.shape[0] < 1: continue
-        counter += 1
-        # count the average over the timewindow for each column and add it to the new data
-        new_row_timestamp = cur_timestamp + NAVDATA_OFFSET_MILIS
-        new_row = [new_row_timestamp]
-        for column in navdata:
-            new_row.append(data_from_current_window[column].mean(axis=0))
-        new_navdata.append(tuple(new_row))
-        # if counter > 10: sys.exit()
-
-        # get the command fiting to that timewindow
-        cur_commands = commands.loc[(cur_timestamp < commands['timestamp']) & (commands['timestamp'] < cur_timestamp + WINDOW_LENGTH), :]
-        # if there's no command, use the previous one
-        if cur_commands.shape[0] < 1:
-            cur_command = prev_command
-        # if there's more than 1 command in the current window, use the first one for the current window and the last
-        # one for the next
-        else:
-            cur_command = cur_commands.head(1)
-            prev_command = cur_commands.tail(1)
-        # get the only row and remove timestamp
-        new_row.extend(cur_command.values.tolist()[0][1:])
-        joined_data.append(tuple(new_row))
-
-    new_navdata = np.array(new_navdata)
-    joined_data = np.array(joined_data)
-    # debug prints
-    print(new_navdata[-1])
-    print(joined_data[-1])
-    print(counter, new_navdata.shape, joined_data.shape)
+    joined_data = np.load("joined_data.npy")
+    new_navdata = np.load("new_navdata.npy")
 
     # training the actual flight model (state + command -> next state)
 
+    X = joined_data[:-JOINING_OFFSET, 1:]
+    y = new_navdata[JOINING_OFFSET:, 1:]
+
+    indices = np.random.permutation(X.shape[0])
+    training_idx, test_idx = indices[:int(X.shape[0]/6)], indices[int(X.shape[0]/6):]
+    train_X, test_X, = X[training_idx, :], X[test_idx, :],
+    train_y, test_y = y[training_idx, :], y[test_idx, :]
+
+    for method in [LinearRegression, MultiTaskLasso, MultiTaskElasticNet]:
+        try:
+            clf = method(n_jobs=-1)
+        except TypeError:
+            clf = method()
+        predictions = clf.fit(train_X, train_y).predict(X=test_X)
+
+        score = list(map(lambda x: sqeuclidean(x[0], x[1]), zip(predictions, test_y)))
+        max_ind = np.argmax(score)
+        #print(predictions[max_ind, :])
+        #print(test_y[max_ind])
+
+        print(str(method.__name__), np.mean(list(score)))
