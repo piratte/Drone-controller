@@ -5,7 +5,7 @@ WINDOW_LENGTH = 20
 NAVDATA_OFFSET_MILIS = 20
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 3 or '-h' in sys.argv or '--help' in sys.argv:
         print("Usage: %s NAVDATA_PATH COMMANDS_PATH" % sys.argv[0])
         sys.exit(1)
     navdata = pandas.read_csv(sys.argv[1], sep='\t', header=None).rename(columns={0: "timestamp"})
@@ -58,3 +58,6 @@ if __name__ == '__main__':
     print(new_navdata.tail(1))
     print(joined_data.tail(1))
     print(joined_data.shape)
+
+    # training the actual flight model (state + command -> next state)
+
